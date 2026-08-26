@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MHTML 转 HTML 工具</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M14.0214 90.0345L6 0.000488281H94.1867L86.1653 89.9859L50.0204 100' fill='%23E44D26'/%3E%3Cpath d='M50.093 92.3445V7.39062H86.1407L79.2617 84.2015' fill='%23F16529'/%3E%3Cpath d='M22.3831 18.4014H50.0933V29.4369H34.4881L35.509 40.7397H50.0933V51.7509H25.3972L22.3831 18.4014ZM25.8833 57.293H36.9674L37.7452 66.1165L50.0933 69.4223V80.9439L27.439 74.624' fill='%23EBEBEB'/%3E%3Cpath d='M77.7058 18.4014H50.0442V29.4369H76.6849L77.7058 18.4014ZM75.6883 40.7397H50.0442V51.7752H63.6562L62.368 66.1165L50.0442 69.4223V80.8953L72.6499 74.624' fill='white'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --ink: #17202a;
+    --muted: #68727d;
+    --line: #dce3e8;
+    --paper: #ffffff;
+    --canvas: #eef3f5;
+    --accent: #e44d26;
+    --accent-dark: #bd3515;
+    --blue: #1677a8;
+    --shadow: 0 18px 45px rgba(23, 32, 42, .08);
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Trebuchet MS", "Microsoft YaHei", sans-serif;
+    margin: 0; padding: 48px 24px 72px; background: var(--canvas); color: var(--ink);
+    background-image: radial-gradient(circle at 12% 8%, rgba(228, 77, 38, .1), transparent 26%),
+      linear-gradient(135deg, rgba(255,255,255,.75), transparent 55%);
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+  }
+  body > h1, body > .subtitle, body > .card { max-width: 980px; margin-left: auto; margin-right: auto; }
+  body > h1 { margin-top: 0; margin-bottom: 10px; font-size: clamp(28px, 4vw, 42px); letter-spacing: -.8px; }
+  body > h1::before { content: "LOCAL FILE TOOL"; display: block; margin-bottom: 12px; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+  .topbar { max-width: 980px; margin: 0 auto 22px; display: flex; justify-content: flex-end; }
+  .language-select { border: 1px solid var(--line); border-radius: 7px; padding: 8px 30px 8px 11px; background: #fff; color: #43515b; font: inherit; font-size: 13px; cursor: pointer; }
+  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 30px; font-size: 15px; line-height: 1.7; }
+  .card {
+    background: rgba(255,255,255,.92); border: 1px solid rgba(220,227,232,.9); border-radius: 16px; padding: 28px;
+    box-shadow: var(--shadow); margin-bottom: 22px;
+  }
+  #drop-zone {
+    border: 1.5px dashed #aebbc4; border-radius: 12px; padding: 52px 24px;
+    text-align: center; cursor: pointer; transition: border-color .2s, background .2s, transform .2s;
+    background: #f7fafb; position: relative; overflow: hidden;
+  }
+  #drop-zone:hover, #drop-zone.dragover {
+    border-color: var(--accent); background: #fff5f1; transform: translateY(-2px);
+  }
+  #drop-zone::before { content: "↥"; display: grid; place-items: center; width: 48px; height: 48px; margin: 0 auto 16px; border-radius: 50%; background: #fff0eb; color: var(--accent); font-size: 28px; font-weight: 700; }
+  #drop-zone p { margin: 0; color: var(--muted); }
+  #drop-zone .big { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 8px; }
+  #file-input { display: none; }
+  .options { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+  .option { display: flex; align-items: flex-start; gap: 10px; flex: 1 1 320px; padding: 13px 15px; border: 1px solid var(--line); border-radius: 10px; color: #3e4b55; font-size: 13px; line-height: 1.5; cursor: pointer; transition: border-color .15s, background .15s; }
+  .option:hover { border-color: #b9c7cf; background: #f8fbfc; }
+  .option input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--accent); flex: 0 0 auto; }
+  .results { margin-top: 18px; }
+  .file-item {
+    background: #fbfcfc; border: 1px solid var(--line); border-radius: 10px; padding: 15px 17px;
+    margin-bottom: 10px; box-shadow: 0 3px 10px rgba(23,32,42,.035);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .file-item .name { flex: 1; font-weight: 700; word-break: break-all; min-width: 200px; }
+  .file-item .status {
+    font-size: 12px; padding: 5px 10px; border-radius: 999px;
+    background: #e7ecef; color: #46535c; white-space: nowrap; font-weight: 700;
+  }
+  .file-item .status.done { background: #e4f4ec; color: #187044; }
+  .file-item .status.error { background: #ffeef0; color: #d73a49; }
+  .file-item .status.processing { background: #fff8e1; color: #b8860b; }
+  .btn {
+    border: 1px solid transparent; padding: 9px 14px; border-radius: 7px; cursor: pointer;
+    font-size: 13px; font-weight: 700; transition: all .15s;
+  }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+  .btn-secondary { background: #fff; border-color: var(--line); color: #43515b; }
+  .btn-secondary:hover { background: #f1f5f6; border-color: #b8c5cc; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .actions { display: flex; gap: 8px; }
+  .error-detail {
+    color: #d73a49; font-size: 12px; margin-top: 6px;
+    font-family: Consolas, monospace; word-break: break-all;
+    flex-basis: 100%;
+  }
+  .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 12px; }
+  .toolbar h2 { color: var(--ink); }
+  @media (max-width: 640px) {
+    body { padding: 28px 14px 48px; }
+    .topbar { margin-bottom: 16px; }
+    .card { padding: 18px; border-radius: 13px; }
+    .subtitle { margin-left: auto !important; }
+    #drop-zone { padding: 38px 16px; }
+    .file-item .name { min-width: 100%; }
+    .actions { width: 100%; }
+    .actions .btn { flex: 1; }
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <label id="language-label" for="language-select" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);">语言</label>
+    <select id="language-select" class="language-select" aria-label="语言">
+      <option value="zh-CN">中文</option>
+      <option value="en">English</option>
+    </select>
+  </div>
+  <h1 data-i18n="title">MHTML 转 HTML 工具</h1>
+  <p class="subtitle" data-i18n="subtitle">将 .mhtml / .mht 文件转换为单文件 HTML（资源以 data URI 内联）。所有转换在浏览器本地完成，文件不会上传。</p>
+
+  <div class="card">
+    <div id="drop-zone">
+      <p class="big" data-i18n="dropFiles">拖放 .mhtml / .mht 文件到这里</p>
+      <p data-i18n="chooseFiles">或点击选择文件（支持多选）</p>
+      <input type="file" id="file-input" accept=".mhtml,.mht" multiple>
+    </div>
+    <div class="options">
+      <label class="option">
+        <input type="checkbox" id="opt-optimize" checked>
+        <span data-i18n="optimize">精简输出（删除 Office 元数据、mso 样式、空标签，合并重复内联样式为 CSS 类，减小体积）</span>
+      </label>
+      <label class="option">
+        <input type="checkbox" id="opt-resources" checked>
+        <span data-i18n="inlineResources">内联资源（图片/CSS 等以 data URI 内联）</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="card" id="results-card" style="display:none;">
+    <div class="toolbar">
+      <h2 style="margin:0;font-size:18px;" data-i18n="results">转换结果</h2>
+      <button class="btn btn-secondary" id="clear-btn" data-i18n="clear">清空</button>
+    </div>
+    <div class="results" id="results"></div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const results = document.getElementById('results');
+    const resultsCard = document.getElementById('results-card');
+    const clearBtn = document.getElementById('clear-btn');
+    const languageSelect = document.getElementById('language-select');
+    const languageLabel = document.getElementById('language-label');
+
+    const messages = {
+      'zh-CN': {
+        title: 'MHTML 转 HTML 工具', subtitle: '将 .mhtml / .mht 文件转换为单文件 HTML（资源以 data URI 内联）。所有转换在浏览器本地完成，文件不会上传。',
+        dropFiles: '拖放 .mhtml / .mht 文件到这里', chooseFiles: '或点击选择文件（支持多选）',
+        optimize: '精简输出（删除 Office 元数据、mso 样式、空标签，合并重复内联样式为 CSS 类，减小体积）',
+        inlineResources: '内联资源（图片/CSS 等以 data URI 内联）', results: '转换结果', clear: '清空',
+        processing: '转换中...', download: '下载 HTML', preview: '预览', done: '完成', error: '失败',
+        invalidFile: '请选择 .mhtml 或 .mht 文件', boundaryError: '未找到 MIME boundary，可能不是有效的 MHTML 文件', mainHtmlError: '未找到主 HTML 文档'
+      },
+      en: {
+        title: 'MHTML to HTML Converter', subtitle: 'Convert .mhtml / .mht files into standalone HTML files with resources inlined as data URIs. Everything runs locally in your browser.',
+        dropFiles: 'Drop .mhtml / .mht files here', chooseFiles: 'or click to choose files (multiple files supported)',
+        optimize: 'Optimize output (remove Office metadata, mso styles, empty tags, and deduplicate inline styles into CSS classes)',
+        inlineResources: 'Inline resources (images, CSS, and more as data URIs)', results: 'Conversion results', clear: 'Clear',
+        processing: 'Converting...', download: 'Download HTML', preview: 'Preview', done: 'Done', error: 'Failed',
+        invalidFile: 'Please choose .mhtml or .mht files', boundaryError: 'MIME boundary not found; this may not be a valid MHTML file', mainHtmlError: 'Main HTML document not found'
+      }
+    };
+    let currentLanguage = localStorage.getItem('mhtml2html-language') || (/^en/i.test(navigator.language) ? 'en' : 'zh-CN');
+
+    function translate(key) {
+      return messages[currentLanguage][key] || messages['zh-CN'][key] || key;
+    }
+
+    function applyLanguage() {
+      document.documentElement.lang = currentLanguage;
+      document.title = translate('title');
+      document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = translate(el.dataset.i18n); });
+      languageSelect.value = currentLanguage;
+      languageLabel.textContent = currentLanguage === 'en' ? 'Language' : '语言';
+      languageSelect.setAttribute('aria-label', languageLabel.textContent);
+      document.querySelectorAll('.status.processing').forEach(el => el.textContent = translate('processing'));
+      document.querySelectorAll('.status.done').forEach(el => el.textContent = translate('done'));
+      document.querySelectorAll('.status.error').forEach(el => el.textContent = translate('error'));
+      document.querySelectorAll('.download-btn').forEach(el => el.textContent = translate('download'));
+      document.querySelectorAll('.preview-btn').forEach(el => el.textContent = translate('preview'));
+    }
+
+    languageSelect.addEventListener('change', () => {
+      currentLanguage = languageSelect.value;
+      localStorage.setItem('mhtml2html-language', currentLanguage);
+      applyLanguage();
+    });
+    applyLanguage();
+
+    // 已转换文件缓存（用于下载）
+    const convertedFiles = new Map();
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', e => {
+      handleFiles(e.target.files);
+      fileInput.value = '';
+    });
+
+    ['dragenter', 'dragover'].forEach(evt => {
+      dropZone.addEventListener(evt, e => {
+        e.preventDefault(); e.stopPropagation();
+        dropZone.classList.add('dragover');
+      });
+    });
+    ['dragleave', 'drop'].forEach(evt => {
+      dropZone.addEventListener(evt, e => {
+        e.preventDefault(); e.stopPropagation();
+        dropZone.classList.remove('dragover');
+      });
+    });
+    dropZone.addEventListener('drop', e => {
+      handleFiles(e.dataTransfer.files);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      convertedFiles.forEach(url => URL.revokeObjectURL(url));
+      convertedFiles.clear();
+      results.innerHTML = '';
+      resultsCard.style.display = 'none';
+    });
+
+    async function handleFiles(fileList) {
+      const files = Array.from(fileList).filter(f => /\.(mhtml|mht)$/i.test(f.name));
+      if (files.length === 0) {
+        alert(translate('invalidFile'));
+        return;
+      }
+      resultsCard.style.display = 'block';
+      for (const file of files) {
+        await processFile(file);
+      }
+    }
+
+    async function processFile(file) {
+      // 只保留最新一次转换结果，及时释放旧的 Blob URL 和结果节点
+      convertedFiles.forEach(url => URL.revokeObjectURL(url));
+      convertedFiles.clear();
+      results.innerHTML = '';
+
+      const itemEl = document.createElement('div');
+      itemEl.className = 'file-item';
+      const outName = file.name.replace(/\.(mhtml|mht)$/i, '.html');
+      itemEl.innerHTML = `
+        <div class="name">${escapeHtml(file.name)} <span style="color:#b2bec3;font-weight:normal;font-size:12px;">(${formatSize(file.size)})</span></div>
+        <div class="status processing">${translate('processing')}</div>
+        <div class="actions" style="display:none;">
+          <button class="btn btn-primary download-btn">${translate('download')}</button>
+          <button class="btn btn-secondary preview-btn">${translate('preview')}</button>
+        </div>
+      `;
+      results.appendChild(itemEl);
+
+      const statusEl = itemEl.querySelector('.status');
+      const actionsEl = itemEl.querySelector('.actions');
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const opts = {
+          optimize: document.getElementById('opt-optimize').checked,
+          inlineResources: document.getElementById('opt-resources').checked
+        };
+        const htmlString = convertMhtml(buffer, opts);
+        const blob = new Blob([htmlString], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        // 同名文件再次转换时先释放旧的 Blob URL，避免内存泄漏
+        const oldUrl = convertedFiles.get(outName);
+        if (oldUrl) URL.revokeObjectURL(oldUrl);
+        convertedFiles.set(outName, url);
+
+        const outSize = blob.size;
+        const ratio = file.size > 0 ? ((1 - outSize / file.size) * 100).toFixed(1) : '0';
+        const ratioText = outSize < file.size ? `↓${ratio}%` : `↑${Math.abs(ratio)}%`;
+        const ratioColor = outSize < file.size ? '#1a7f37' : '#d73a49';
+
+        statusEl.className = 'status done';
+        statusEl.textContent = translate('done');
+        itemEl.querySelector('.name').insertAdjacentHTML('beforeend',
+          ` <span style="color:${ratioColor};font-weight:normal;font-size:12px;">(${formatSize(outSize)}, ${ratioText})</span>`);
+        actionsEl.style.display = 'flex';
+
+        itemEl.querySelector('.download-btn').addEventListener('click', () => {
+          downloadBlob(url, outName);
+        });
+        itemEl.querySelector('.preview-btn').addEventListener('click', () => {
+          window.open(url, '_blank');
+        });
+      } catch (err) {
+        statusEl.className = 'status error';
+        statusEl.textContent = translate('error');
+        const detail = document.createElement('div');
+        detail.className = 'error-detail';
+        detail.textContent = err && err.stack ? err.stack : (err && err.message ? err.message : String(err));
+        itemEl.appendChild(detail);
+      }
+    }
+
+    // ==================== MHTML 解析器 ====================
+
+    /**
+     * 将 MHTML ArrayBuffer 转换为单文件 HTML 字符串
+     * @param {ArrayBuffer} buffer MHTML 文件内容
+     * @param {{optimize:boolean, inlineResources:boolean}} opts 选项
+     */
+    function convertMhtml(buffer, opts) {
+      opts = opts || { optimize: false, inlineResources: true };
+      const bytes = new Uint8Array(buffer);
+      // 用 latin1 解码以保持字节一一对应（0-255），用于结构解析
+      const text = bytesToLatin1(bytes);
+
+      // 1. 提取 boundary
+      const boundary = extractBoundary(text);
+      if (!boundary) throw new Error(translate('boundaryError'));
+
+      // 2. 按 boundary 分割各部分
+      const parts = splitParts(text, boundary);
+
+      // 3. 解析每个部分
+      const resources = []; // {location, id, dataUri, contentType}
+      let mainHtml = null;
+
+      for (const part of parts) {
+        const parsed = parsePart(part, bytes);
+        if (!parsed) continue;
+
+        const contentType = parsed.headers['content-type'] || 'application/octet-stream';
+        const contentTypeMain = contentType.split(';')[0].trim().toLowerCase();
+        const contentLocation = parsed.headers['content-location'] || '';
+        const contentId = parsed.headers['content-id'] || '';
+
+        if (contentTypeMain === 'text/html' && !mainHtml) {
+          // 第一个 text/html 部分作为主 HTML 文档
+          mainHtml = { html: parsed.bodyText, charset: parsed.charset };
+          continue;
+        }
+
+        // 其余部分作为资源（带 content-id/location 的 text/html 子帧会以 data URI 内联）
+        if (contentLocation || contentId) {
+          resources.push({
+            location: contentLocation, id: contentId,
+            dataUri: buildDataUri(parsed.bodyBytes, contentType, parsed.encoding),
+            contentType
+          });
+        }
+      }
+
+      if (!mainHtml) throw new Error(translate('mainHtmlError'));
+
+      // 4. 解码主 HTML（按 charset）
+      let html = mainHtml.html;
+
+      // 5. 将资源引用替换为 data URI
+      if (opts.inlineResources) {
+        html = replaceResources(html, resources);
+      }
+
+      // 6. 精简输出
+      if (opts.optimize) {
+        html = optimizeHtml(html);
+      }
+
+      // 7. 输出统一为 UTF-8，修正/补充 charset 声明，避免浏览器按旧编码解码产生乱码
+      html = ensureUtf8Meta(html);
+
+      // 8. 补全 DOCTYPE
+      if (!/^\s*<!doctype/i.test(html)) {
+        html = '<!DOCTYPE html>\n' + html;
+      }
+
+      return html;
+    }
+
+    function bytesToLatin1(bytes) {
+      let s = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return s;
+    }
+
+    /**
+     * 从 MHTML 头部提取 boundary 参数
+     */
+    function extractBoundary(text) {
+      // 找到第一个空行（头部结束）
+      const headerEnd = findHeaderEnd(text);
+      const header = text.slice(0, headerEnd);
+      // 合并折叠行
+      const unfolded = unfoldHeader(header);
+      const m = unfolded.match(/boundary\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s;]+))/i);
+      return m ? (m[1] || m[2] || m[3]) : null;
+    }
+
+    function findHeaderEnd(text) {
+      // 找 \n\n 或 \r\n\r\n
+      const m = text.match(/\r?\n\r?\n/);
+      return m ? m.index + m[0].length : text.length;
+    }
+
+    /**
+     * 合并 RFC 822 折叠行（以空格/制表符开头的续行）
+     */
+    function unfoldHeader(header) {
+      const lines = header.split(/\r?\n/);
+      const out = [];
+      for (const line of lines) {
+        if ((line.charAt(0) === ' ' || line.charAt(0) === '\t') && out.length > 0) {
+          out[out.length - 1] += ' ' + line.replace(/^[ \t]+/, '');
+        } else {
+          out.push(line);
+        }
+      }
+      return out.join('\n');
+    }
+
+    /**
+     * 按 boundary 分割 MHTML 为多个部分字符串（latin1）
+     */
+    function splitParts(text, boundary) {
+      const delimiter = '--' + boundary;
+      const parts = [];
+
+      // 用正则找出所有 delimiter 出现的位置（必须在行首或文件开头）
+      // 捕获组 1：如果为 '--' 表示结束标记
+      // 结尾的换行符可选，以处理文件末尾没有换行的情况
+      const regex = new RegExp('(?:^|\\r?\\n)' + escapeRegex(delimiter) + '(--)?[ \\t]*(?:\\r?\\n|$)', 'g');
+      const positions = [];
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        positions.push({
+          // part 内容的开始位置（delimiter 行之后）
+          contentStart: match.index + match[0].length,
+          // delimiter 前的换行符位置（part 内容的结束位置，不含换行）
+          contentEnd: match.index + (match[0].startsWith('\n') || match[0].startsWith('\r')
+                       ? match[0].length - match[0].replace(/^\r?\n/, '').length
+                       : 0),
+          isEnd: match[1] === '--'
+        });
+        // 防止零宽匹配死循环
+        if (match[0].length === 0) regex.lastIndex++;
+      }
+
+      for (let i = 0; i < positions.length; i++) {
+        const cur = positions[i];
+        if (i === 0) continue; // 第一个 delimiter 是开头标记，跳过
+        // 上一个 delimiter 之后到当前 delimiter 之前的内容
+        const prev = positions[i - 1];
+        parts.push(text.slice(prev.contentStart, cur.contentEnd));
+        if (cur.isEnd) break;
+      }
+      // 处理最后一个 delimiter 后没有结束标记的情况
+      if (positions.length > 0 && !positions[positions.length - 1].isEnd) {
+        const last = positions[positions.length - 1];
+        parts.push(text.slice(last.contentStart));
+      }
+
+      return parts;
+    }
+
+    function escapeRegex(s) {
+      return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    /**
+     * 解析单个 MIME 部分
+     */
+    function parsePart(part, allBytes) {
+      if (!part) return null;
+      const headerEnd = part.match(/\r?\n\r?\n/);
+      if (!headerEnd) return null;
+
+      const headerStr = part.slice(0, headerEnd.index);
+      const bodyStart = headerEnd.index + headerEnd[0].length;
+      const body = part.slice(bodyStart);
+
+      const headers = parseHeaders(headerStr);
+      const contentType = headers['content-type'] || '';
+      const encoding = (headers['content-transfer-encoding'] || '').toLowerCase();
+
+      // 提取 charset（优先用 Content-Type 头；缺失时从 body 前部 <meta charset> 嗅探，
+      // 兼容部分导出工具只在 HTML 里声明 charset 的情况）
+      let charset = null;
+      const csMatch = contentType.match(/charset\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s;]+))/i);
+      if (csMatch) charset = csMatch[1] || csMatch[2] || csMatch[3];
+      if (!charset) {
+        const metaCs = body.slice(0, 4096).match(/<meta\b[^>]*charset\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'>/]+))/i);
+        if (metaCs) charset = metaCs[1] || metaCs[2] || metaCs[3];
+      }
+
+      // 解码 body（按 Content-Transfer-Encoding），只解码一次
+      let decodedBytes;
+      try {
+        if (encoding === 'base64') {
+          decodedBytes = decodeBase64ToBytes(body);
+        } else if (encoding === 'quoted-printable') {
+          decodedBytes = decodeQuotedPrintableToBytes(body);
+        } else {
+          // 7bit, 8bit, binary：body 是 latin1 字符串，直接转回字节
+          decodedBytes = latin1ToBytes(body);
+        }
+      } catch (e) {
+        // 单个部分解码失败（如 base64 内容损坏）时退化为原始字节，
+        // 避免一个坏部分拖垮整个文件的转换
+        decodedBytes = latin1ToBytes(body);
+      }
+
+      return {
+        headers,
+        charset,
+        encoding,
+        bodyText: decodeText(decodedBytes, charset),
+        bodyBytes: decodedBytes
+      };
+    }
+
+    function parseHeaders(headerStr) {
+      const headers = {};
+      const unfolded = unfoldHeader(headerStr);
+      const lines = unfolded.split(/\r?\n/);
+      for (const line of lines) {
+        if (!line) continue;
+        const idx = line.indexOf(':');
+        if (idx < 0) continue;
+        const key = line.slice(0, idx).trim().toLowerCase();
+        const value = line.slice(idx + 1).trim();
+        headers[key] = value;
+      }
+      return headers;
+    }
+
+    function latin1ToBytes(str) {
+      const bytes = new Uint8Array(str.length);
+      for (let i = 0; i < str.length; i++) {
+        bytes[i] = str.charCodeAt(i) & 0xff;
+      }
+      return bytes;
+    }
+
+    function decodeBase64ToBytes(body) {
+      // 去除换行符和空白
+      const clean = body.replace(/[^A-Za-z0-9+/=]/g, '');
+      const bin = atob(clean);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return bytes;
+    }
+
+    function decodeQuotedPrintableToBytes(body) {
+      // 移除软换行（行尾 = 后跟换行）
+      const cleaned = body.replace(/=\r?\n/g, '');
+      const bytes = [];
+      for (let i = 0; i < cleaned.length; i++) {
+        const c = cleaned.charAt(i);
+        if (c === '=' && i + 2 < cleaned.length) {
+          const hex = cleaned.substr(i + 1, 2);
+          if (/^[0-9A-Fa-f]{2}$/.test(hex)) {
+            bytes.push(parseInt(hex, 16));
+            i += 2;
+            continue;
+          }
+        }
+        bytes.push(cleaned.charCodeAt(i) & 0xff);
+      }
+      return new Uint8Array(bytes);
+    }
+
+    function decodeText(bytes, charset) {
+      try {
+        const cs = (charset || 'utf-8').toLowerCase();
+        // 规范化 charset 名称（gb2312 是 gbk 的子集；gb18030 是超集，
+        // 直接使用其原生标签解码，避免映射到 gbk 丢失生僻字）
+        const encoding = cs === 'gb2312' ? 'gbk' : cs;
+        return new TextDecoder(encoding).decode(bytes);
+      } catch (e) {
+        return new TextDecoder('utf-8').decode(bytes);
+      }
+    }
+
+    function buildDataUri(bytes, contentType, encoding) {
+      // 如果原始是 base64 编码，直接用 base64；否则转换
+      const base64 = bytesToBase64(bytes);
+      // 确保 contentType 包含 mime type
+      const mime = contentType.split(';')[0].trim() || 'application/octet-stream';
+      return `data:${mime};base64,${base64}`;
+    }
+
+    function bytesToBase64(bytes) {
+      let binary = '';
+      const chunk = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunk) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+      }
+      return btoa(binary);
+    }
+
+    // ==================== 资源引用替换 ====================
+
+    function replaceResources(html, resources) {
+      if (resources.length === 0) return html;
+
+      // 构建查找表
+      const byLocation = new Map(); // 规范化 URL -> dataUri
+      const byId = new Map();       // cid -> dataUri
+      const byFilename = new Map(); // 文件名 -> dataUri（路径匹配失败时的兜底，避免逐个遍历）
+      for (const r of resources) {
+        if (r.location) {
+          byLocation.set(normalizeUrl(r.location), r.dataUri);
+          // 也存原始 key（小写）
+          byLocation.set(r.location.toLowerCase(), r.dataUri);
+          const fn = r.location.split(/[\\/]/).pop().split(/[?#]/)[0].toLowerCase();
+          if (fn && !byFilename.has(fn)) byFilename.set(fn, r.dataUri);
+        }
+        if (r.id) {
+          // Content-ID 格式: <xxx@yyy>
+          const cid = r.id.replace(/^<|>$/g, '');
+          byId.set(cid, r.dataUri);
+          byId.set(cid.toLowerCase(), r.dataUri);
+        }
+      }
+
+      // 保护 <script> 内容，避免 JS 字符串中的 src/href/url() 被下面的正则误替换
+      const scriptBlocks = [];
+      let sidx = 0;
+      html = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, m => {
+        scriptBlocks.push(m);
+        return `\x00SCRIPT${sidx++}\x00`;
+      });
+
+      // 1. 替换 src/href 属性（包括 cid: 引用）
+      html = html.replace(/\b(src|href)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]*))/gi, (match, attr, dq, sq, unq) => {
+        let url = dq !== undefined ? dq : (sq !== undefined ? sq : unq);
+        if (!url) return match;
+        const dataUri = resolveResource(url, byLocation, byId, byFilename);
+        if (dataUri) {
+          return `${attr}="${dataUri}"`;
+        }
+        return match;
+      });
+
+      // 1.5. 替换 srcset 中的候选 URL（如 "a.png 1x, b.png 2x"）
+      html = html.replace(/\bsrcset\s*=\s*(?:"([^"]*)"|'([^']*)')/gi, (match, dq, sq) => {
+        const value = dq !== undefined ? dq : sq;
+        if (!value) return match;
+        const candidates = value.split(',').map(item => {
+          const t = item.trim();
+          if (!t) return item;
+          const sp = t.search(/\s/);
+          const url = sp === -1 ? t : t.slice(0, sp);
+          const desc = sp === -1 ? '' : t.slice(sp + 1).trim();
+          const dataUri = resolveResource(url, byLocation, byId, byFilename);
+          if (!dataUri) return item;
+          return desc ? `${dataUri} ${desc}` : dataUri;
+        });
+        return `srcset="${candidates.join(', ')}"`;
+      });
+
+      // 2. 替换 CSS 中的 url(...)
+      html = html.replace(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*))\s*\)/gi, (match, dq, sq, unq) => {
+        let url = dq !== undefined ? dq : (sq !== undefined ? sq : unq);
+        if (!url) return match;
+        url = url.trim();
+        const dataUri = resolveResource(url, byLocation, byId, byFilename);
+        if (dataUri) {
+          return `url("${dataUri}")`;
+        }
+        return match;
+      });
+
+      // 还原 <script> 内容
+      html = html.replace(/\x00SCRIPT(\d+)\x00/g, (_, i) => scriptBlocks[+i]);
+
+      return html;
+    }
+
+    function resolveResource(url, byLocation, byId, byFilename) {
+      url = url.trim();
+      if (!url) return null;
+
+      // cid: 引用
+      if (/^cid:/i.test(url)) {
+        const cid = url.slice(4).trim();
+        return byId.get(cid) || byId.get(cid.toLowerCase()) || null;
+      }
+
+      // data: 已经是 data URI
+      if (/^data:/i.test(url)) return null;
+
+      // http(s)://, file:// 等绝对 URL
+      const normalized = normalizeUrl(url);
+      if (byLocation.has(normalized)) return byLocation.get(normalized);
+      if (byLocation.has(url.toLowerCase())) return byLocation.get(url.toLowerCase());
+
+      // 尝试只匹配路径部分（去除 query string 和 hash）
+      const pathOnly = url.split(/[?#]/)[0];
+      const normalizedPath = normalizeUrl(pathOnly);
+      if (byLocation.has(normalizedPath)) return byLocation.get(normalizedPath);
+      if (byLocation.has(pathOnly.toLowerCase())) return byLocation.get(pathOnly.toLowerCase());
+
+      // 尝试匹配文件名（优先用预建索引，命中为 O(1)）
+      const filename = pathOnly.split('/').pop();
+      if (filename) {
+        const hit = byFilename && byFilename.get(filename.toLowerCase());
+        if (hit) return hit;
+        for (const [key, value] of byLocation.entries()) {
+          if (key.endsWith('/' + filename.toLowerCase()) || key === filename.toLowerCase()) {
+            return value;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    /**
+     * 规范化 URL 以便匹配：
+     * - 去除前后空白
+     * - 转小写
+     * - 去除 query string 和 hash
+     * - 去除协议（http://, https://, file://）
+     */
+    function normalizeUrl(url) {
+      let u = url.trim().toLowerCase();
+      // 去除 query string 和 hash
+      u = u.split(/[?#]/)[0];
+      // 去除协议
+      u = u.replace(/^[a-z]+:\/\//, '');
+      // 去除反斜杠
+      u = u.replace(/\\/g, '/');
+      return u;
+    }
+
+    // ==================== HTML 精简优化 ====================
+
+    /**
+     * 精简 HTML，主要针对 Word/WPS 等办公软件保存的 HTML：
+     * - 删除 IE 条件注释（Office XML 元数据）
+     * - 删除 Office 命名空间元素（o:*, w:*, v:* 等）
+     * - 删除 xmlns:o/w/dt/v 等命名空间声明
+     * - 删除 mso-* 样式属性和 Office 特定 meta 标签
+     * - 删除空的 span/p/div 标签
+     * - 压缩多余空白
+     * - 删除 HTML 注释
+     */
+    function optimizeHtml(html) {
+      // 1. 删除 IE 条件注释（含 Office XML 元数据）
+      //    格式: <!--[if ...]> ... <![endif]-->
+      //    用 \x2d 表示 '-'，避免正则中出现字面 '--'/'<!--' 序列，
+      //    被 HTML 内联脚本解析器误判为注释起止符
+      html = html.replace(/<!\x2d\x2d\[if[\s\S]*?<!\[endif\]\x2d\x2d>/gi, '');
+      // 删除残留的条件注释结束标记
+      html = html.replace(/<!\[endif\]\x2d\x2d>/gi, '');
+
+      // 2. 删除所有 HTML 注释（同上，用 \x2d 表示 '-' 规避内联脚本解析歧义）
+      html = html.replace(/<!\x2d\x2d[\s\S]*?\x2d\x2d>/g, '');
+
+      // 3. 删除 Office 命名空间元素及其内容
+      //    <o:DocumentProperties>...</o:DocumentProperties>
+      //    <w:WordDocument>...</w:WordDocument>
+      //    <v:shape>...</v:shape> 等
+      //    这些元素通常成对出现，使用非贪婪匹配
+      const officeTags = [
+        'o:DocumentProperties', 'o:CustomDocumentProperties', 'o:OfficeDocumentSettings',
+        'w:WordDocument', 'w:LatentStyles',
+        'v:shape', 'v:shapetype', 'v:rect', 'v:roundrect', 'v:oval', 'v:line',
+        'v:polyline', 'v:curve', 'v:arc', 'v:image', 'v:imagedata',
+        'v:group', 'v:stroke', 'v:fill', 'v:shadow', 'v:textbox', 'v:path',
+        'o:shapelayout', 'o:lock', 'o:complex',
+        'st1:*', 'st2:*'
+      ];
+      // 删除带内容的 Office 元素（自闭合和成对）
+      for (const tag of officeTags) {
+        const tagName = tag.replace(/\*$/, '');
+        // 成对元素
+        const openRegex = new RegExp('<' + escapeRegex(tagName) + '[\\w-]*[^>]*>[\\s\\S]*?</' + escapeRegex(tagName) + '[\\w-]*>', 'gi');
+        html = html.replace(openRegex, '');
+        // 自闭合元素
+        const selfCloseRegex = new RegExp('<' + escapeRegex(tagName) + '[\\w-]*[^>]*/>', 'gi');
+        html = html.replace(selfCloseRegex, '');
+      }
+      // 通配：删除所有 <prefix:tag ...>...</prefix:tag> 中前缀为 o/w/v/st 的元素
+      html = html.replace(/<(o|w|v|st\d?):[\w-]+[\s\S]*?<\/\1:[\w-]+>/gi, '');
+      html = html.replace(/<(o|w|v|st\d?):[\w-]+[^>]*\/>/gi, '');
+      html = html.replace(/<(o|w|v|st\d?):[\w-]+[^>]*>/gi, '');
+      // 清理成对删除后残留的 Office 闭合标签（如 </v:shape>），保证输出 HTML 合法
+      html = html.replace(/<\/(o|w|v|st\d?):[\w-]+>/gi, '');
+
+      // 4. 删除 Office 命名空间声明（xmlns:o, xmlns:w, xmlns:dt, xmlns:v 等）
+      html = html.replace(/\s+xmlns:(o|w|dt|v|st\d?|x|ms)\s*=\s*"[^"]*"/gi, '');
+      html = html.replace(/\s+xmlns:(o|w|dt|v|st\d?|x|ms)\s*=\s*'[^']*'/gi, '');
+
+      // 5. 删除 Office 特定 meta 标签
+      html = html.replace(/<meta\s+name\s*=\s*"(ProgId|Generator|Originator)"[^>]*>/gi, '');
+
+      // 6. 删除 style 属性中的 mso-* 属性
+      html = html.replace(/\s+style\s*=\s*"([^"]*)"/gi, (match, style) => {
+        const cleaned = trimPtZeros(style.replace(/\bmso-[^;:]+:[^;]+;?/gi, '')).trim();
+        if (!cleaned) return ''; // 整个 style 都是 mso-* 属性
+        return ` style="${cleaned}"`;
+      });
+      html = html.replace(/\s+style\s*=\s*'([^']*)'/gi, (match, style) => {
+        const cleaned = trimPtZeros(style.replace(/\bmso-[^;:]+:[^;]+;?/gi, '')).trim();
+        if (!cleaned) return '';
+        return ` style="${cleaned}"`;
+      });
+
+      // 7. 删除 <style> 标签中的 mso-* 规则和 Office 特定规则
+      html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (match, css) => {
+        // 删除 mso-* 属性
+        let cleaned = css.replace(/\bmso-[^;:]+:[^;]+;?/gi, '');
+        // 删除 @page、@font-face 中的 mso 项
+        cleaned = cleaned.replace(/@page[^{]*\{[^}]*\}/gi, '');
+        // 删除仅含 mso-* 的规则
+        cleaned = cleaned.replace(/[^{}]*\{\s*mso-[^}]*\}/gi, '');
+        // 删除空规则
+        cleaned = cleaned.replace(/[^{}]+\{\s*\}/gi, '');
+        // 压缩多余空行
+        cleaned = cleaned.replace(/\n\s*\n+/g, '\n');
+        cleaned = trimPtZeros(cleaned);
+        return `<style>${cleaned}</style>`;
+      });
+
+      // 8. 删除空的 span/p/div/b/i 等标签（不含文本和子元素）
+      //    多次循环以处理嵌套空标签
+      let prev;
+      do {
+        prev = html;
+        html = html.replace(/<(span|p|div|b|i|em|strong|font|u|s|a)\b[^>]*>\s*<\/\1>/gi, '');
+      } while (html !== prev);
+
+      // 9. 删除 Word 特定 class（如 MsoNormal 等），保留功能性 class
+      //    简化处理：删除 class 属性中只含 Mso* 类的情况
+      html = html.replace(/\s+class\s*=\s*"([^"]*)"/gi, (match, cls) => {
+        const classes = cls.split(/\s+/).filter(c => c && !/^Mso/i.test(c));
+        if (classes.length === 0) return '';
+        return ` class="${classes.join(' ')}"`;
+      });
+
+      // 9.5 先提取完全相同的行内 style（如空白填充段落），再对剩余样式按属性拆解，
+      //     将高频重复的单个属性（如 font-family/color/font-size）也提取为共享 class
+      html = deduplicateStyles(html);
+      html = extractCommonStyleProperties(html);
+
+      // 10. 删除 lang 属性（Office 常加）
+      html = html.replace(/\s+lang\s*=\s*"[^"]*"/gi, '');
+
+      // 11. 压缩空白：保护 pre/textarea/code 内容，避免破坏格式
+      //     先用占位符替换需要保护的内容
+      const protectedBlocks = [];
+      let idx = 0;
+      html = html.replace(/<(pre|textarea|code)\b[^>]*>[\s\S]*?<\/\1>/gi, (m) => {
+        protectedBlocks.push(m);
+        return `\x00PROT${idx++}\x00`;
+      });
+
+      // 压缩标签间多余空白
+      html = html.replace(/>\s+</g, '><');
+      // 合并多个空格为一个
+      html = html.replace(/[ \t]+/g, ' ');
+      // 合并多个空行
+      html = html.replace(/\n\s*\n+/g, '\n');
+      html = html.trim();
+
+      // 还原保护的内容
+      html = html.replace(/\x00PROT(\d+)\x00/g, (_, i) => protectedBlocks[+i]);
+
+      return html;
+    }
+
+    /**
+     * 输出 HTML 统一以 UTF-8 编码保存，这里保证文档的 charset 声明为 utf-8：
+     * - 已存在 <meta charset> 或 http-equiv 声明 → 改写为 utf-8
+     * - 完全没有声明 → 在 <head> 后（或文档开头）补插 <meta charset="utf-8">
+     * 避免浏览器按旧的 gbk/gb2312 等声明解码 UTF-8 字节而产生乱码
+     */
+    function ensureUtf8Meta(html) {
+      // 1. 统一改写已有 charset 声明（支持带引号与不带引号两种形式）
+      html = html.replace(/<meta\b[^>]*charset\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>/]+)[^>]*>/gi, m =>
+        m.replace(/charset\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>/]+)/i, 'charset="utf-8"')
+      );
+
+      // 2. 若无任何 charset 声明则补插（只检查 head 区域，避免误判 body 中的文本）
+      const headMatch = html.match(/<head[^>]*>[\s\S]*?<\/head>/i);
+      if (headMatch) {
+        if (!/charset\s*=/i.test(headMatch[0])) {
+          const insertPos = html.indexOf('>', html.search(/<head\b/i)) + 1;
+          html = html.slice(0, insertPos) + '<meta charset="utf-8">' + html.slice(insertPos);
+        }
+      } else if (!/charset\s*=/i.test(html.slice(0, 4096))) {
+        const doctype = html.match(/^\s*<!doctype[^>]*>/i);
+        const pos = doctype ? doctype[0].length : 0;
+        html = html.slice(0, pos) + '<meta charset="utf-8">' + html.slice(pos);
+      }
+      return html;
+    }
+
+    // ==================== 重复行内样式提取 ====================
+
+    // 匹配一个开始标签及其属性列表：捕获 标签名 / 属性原文 / 是否自闭合
+    const TAG_RE = /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[a-zA-Z_:][-a-zA-Z0-9_:.]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?)*)\s*(\/?)>/g;
+
+    /**
+     * 从标签属性原文中取出指定属性的值（不存在返回 null）
+     */
+    function extractAttr(attrsStr, name) {
+      const re = new RegExp('(?:^|\\s)' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s"\'=<>`]+))', 'i');
+      const m = attrsStr.match(re);
+      if (!m) return null;
+      return m[1] !== undefined ? m[1] : (m[2] !== undefined ? m[2] : m[3]);
+    }
+
+    /**
+     * 将 style 拆分为 "prop:value" 数组，去除空项和多余空白
+     */
+    function splitStyleProps(style) {
+      return style.split(';').map(s => s.trim()).filter(Boolean);
+    }
+
+    /**
+     * 规范化 style 值：去除多余空白，统一分号，便于比较是否重复
+     */
+    function canonicalizeStyle(style) {
+      const props = splitStyleProps(style);
+      if (props.length === 0) return '';
+      return props.join(';') + ';';
+    }
+
+    /**
+     * 去除 pt 数值的多余小数尾零（如 24.0000pt -> 24pt，10.5000pt -> 10.5pt）
+     */
+    function trimPtZeros(text) {
+      return text.replace(/(-?\d+\.\d+)pt\b/g, (m, num) => {
+        const trimmed = num.replace(/0+$/, '').replace(/\.$/, '');
+        return trimmed + 'pt';
+      });
+    }
+
+    /**
+     * 将一个或多个 class 名合并进属性原文中，兼容已有 class 为双引号/单引号/无引号三种形式
+     */
+    function mergeClasses(attrsStr, addClasses) {
+      let hasClass = false;
+      let out = attrsStr.replace(/\s+class\s*=\s*"([^"]*)"/i, (m, cls) => {
+        hasClass = true;
+        return ` class="${(cls ? cls + ' ' : '') + addClasses}"`;
+      });
+      if (!hasClass) {
+        out = out.replace(/\s+class\s*=\s*'([^']*)'/i, (m, cls) => {
+          hasClass = true;
+          return ` class="${(cls ? cls + ' ' : '') + addClasses}"`;
+        });
+      }
+      if (!hasClass) {
+        // 无引号 class，如 class=MsoNormal
+        out = out.replace(/(\s+class\s*=\s*)([^\s"'=<>`]+)/i, (m, prefix, val) => {
+          hasClass = true;
+          return `${prefix}"${val} ${addClasses}"`;
+        });
+      }
+      if (!hasClass) {
+        out += ` class="${addClasses}"`;
+      }
+      return out;
+    }
+
+    /**
+     * 将属性原文中的 style="..." 移除，并把 class 合并进去（没有 class 则新增）
+     */
+    function replaceStyleWithClass(attrsStr, className) {
+      // 兼容双引号/单引号/无引号三种 style 写法
+      const out = attrsStr.replace(/\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/i, '');
+      return mergeClasses(out, className);
+    }
+
+    /**
+     * 将生成的 CSS 规则插入文档：优先追加到已有 <style> 标签中，
+     * 否则在 <head> 开始处插入新的 <style> 标签
+     */
+    function insertStyleRules(html, rules) {
+      const styleTagMatch = html.match(/<style\b[^>]*>/i);
+      if (styleTagMatch) {
+        const closeIdx = html.indexOf('</style>', styleTagMatch.index);
+        if (closeIdx !== -1) {
+          return html.slice(0, closeIdx) + rules + html.slice(closeIdx);
+        }
+      }
+      const headMatch = html.match(/<head[^>]*>/i);
+      if (headMatch) {
+        const insertPos = headMatch.index + headMatch[0].length;
+        return html.slice(0, insertPos) + `<style>${rules}</style>` + html.slice(insertPos);
+      }
+      return `<style>${rules}</style>` + html;
+    }
+
+    /**
+     * 提取文档中重复出现次数较多的行内 style，改写为共享 class，
+     * 用于处理 Word/WPS 导出 HTML 中大量完全相同的行内样式（如空白填充段落）
+     */
+    function deduplicateStyles(html) {
+      const MIN_COUNT = 4;   // 至少出现次数才值得提取
+      const MIN_LEN = 15;    // style 内容太短则没有提取价值
+
+      // 第一遍：统计每种规范化 style 的出现次数
+      const freq = new Map();
+      let m;
+      TAG_RE.lastIndex = 0;
+      while ((m = TAG_RE.exec(html)) !== null) {
+        const attrsStr = m[2];
+        if (!attrsStr) continue;
+        const style = extractAttr(attrsStr, 'style');
+        if (!style) continue;
+        const canon = canonicalizeStyle(style);
+        if (!canon) continue;
+        freq.set(canon, (freq.get(canon) || 0) + 1);
+      }
+
+      // 选取满足阈值的重复 style，分配 class 名
+      const classMap = new Map();
+      let idx = 0;
+      for (const [style, count] of freq.entries()) {
+        if (count >= MIN_COUNT && style.length >= MIN_LEN) {
+          classMap.set(style, 'gc' + (idx++));
+        }
+      }
+      if (classMap.size === 0) return html;
+
+      // 第二遍：重写命中的标签，将 style 替换为 class
+      let out = '';
+      let lastIndex = 0;
+      TAG_RE.lastIndex = 0;
+      while ((m = TAG_RE.exec(html)) !== null) {
+        const attrsStr = m[2];
+        if (!attrsStr) continue;
+        const style = extractAttr(attrsStr, 'style');
+        if (!style) continue;
+        const className = classMap.get(canonicalizeStyle(style));
+        if (!className) continue;
+
+        out += html.slice(lastIndex, m.index);
+        const newAttrs = replaceStyleWithClass(attrsStr, className);
+        out += `<${m[1]}${newAttrs}${m[3]}>`;
+        lastIndex = m.index + m[0].length;
+      }
+      out += html.slice(lastIndex);
+
+      // 生成共享 CSS 规则并插入文档
+      let rules = '';
+      for (const [style, className] of classMap.entries()) {
+        rules += `.${className}{${style}}`;
+      }
+      return insertStyleRules(out, rules);
+    }
+
+    /**
+     * 在完全重复提取之后，对剩余行内 style 按单个属性（prop:value）级别提取，
+     * 将高频共用的属性（如 font-family/color/font-size 组合）拆分为共享 class，
+     * 仅保留低频、因字而异的属性（如 letter-spacing）在行内，进一步减小体积
+     */
+    function extractCommonStyleProperties(html) {
+      const MIN_COUNT = 20; // 单个属性至少重复多少次才值得提取
+      const MIN_LEN = 8;    // 属性文本太短则提取收益不大
+
+      const freq = new Map();
+      let m;
+      TAG_RE.lastIndex = 0;
+      while ((m = TAG_RE.exec(html)) !== null) {
+        const attrsStr = m[2];
+        if (!attrsStr) continue;
+        const style = extractAttr(attrsStr, 'style');
+        if (!style) continue;
+        for (const prop of splitStyleProps(style)) {
+          freq.set(prop, (freq.get(prop) || 0) + 1);
+        }
+      }
+
+      const classMap = new Map();
+      let idx = 0;
+      for (const [prop, count] of freq.entries()) {
+        if (count >= MIN_COUNT && prop.length >= MIN_LEN) {
+          classMap.set(prop, 'pc' + (idx++));
+        }
+      }
+      if (classMap.size === 0) return html;
+
+      let out = '';
+      let lastIndex = 0;
+      TAG_RE.lastIndex = 0;
+      while ((m = TAG_RE.exec(html)) !== null) {
+        const attrsStr = m[2];
+        if (!attrsStr) continue;
+        const style = extractAttr(attrsStr, 'style');
+        if (!style) continue;
+
+        const extracted = [];
+        const remaining = [];
+        for (const prop of splitStyleProps(style)) {
+          const cls = classMap.get(prop);
+          if (cls) extracted.push(cls);
+          else remaining.push(prop);
+        }
+        if (extracted.length === 0) continue;
+
+        out += html.slice(lastIndex, m.index);
+        // 兼容双引号/单引号/无引号三种 style 写法
+        let newAttrs = attrsStr.replace(/\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+)/i, '');
+        if (remaining.length > 0) {
+          newAttrs += ` style="${remaining.join(';')};"`;
+        }
+        newAttrs = mergeClasses(newAttrs, extracted.join(' '));
+        out += `<${m[1]}${newAttrs}${m[3]}>`;
+        lastIndex = m.index + m[0].length;
+      }
+      out += html.slice(lastIndex);
+
+      let rules = '';
+      for (const [prop, cls] of classMap.entries()) {
+        rules += `.${cls}{${prop}}`;
+      }
+      return insertStyleRules(out, rules);
+    }
+
+    // ==================== 辅助函数 ====================
+
+    function downloadBlob(url, filename) {
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function formatSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    }
+  </script>
+</body>
+</html>
