@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>MHTML 转 HTML 工具</title>
+<title>mhtml2html</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M14.0214 90.0345L6 0.000488281H94.1867L86.1653 89.9859L50.0204 100' fill='%23E44D26'/%3E%3Cpath d='M50.093 92.3445V7.39062H86.1407L79.2617 84.2015' fill='%23F16529'/%3E%3Cpath d='M22.3831 18.4014H50.0933V29.4369H34.4881L35.509 40.7397H50.0933V51.7509H25.3972L22.3831 18.4014ZM25.8833 57.293H36.9674L37.7452 66.1165L50.0933 69.4223V80.9439L27.439 74.624' fill='%23EBEBEB'/%3E%3Cpath d='M77.7058 18.4014H50.0442V29.4369H76.6849L77.7058 18.4014ZM75.6883 40.7397H50.0442V51.7752H63.6562L62.368 66.1165L50.0442 69.4223V80.8953L72.6499 74.624' fill='white'/%3E%3C/svg%3E">
 <style>
   :root {
@@ -308,10 +308,11 @@
 
       // 1. 提取 boundary
       const boundary = extractBoundary(text);
-      if (!boundary) throw new Error(translate('boundaryError'));
 
-      // 2. 按 boundary 分割各部分
-      const parts = splitParts(text, boundary);
+      // 2. 按 boundary 分割各部分；部分工具（如 WPS/Excel）导出的 "MHTML" 实际只有单个
+      //    MIME 部分（无 multipart/related 包装，也没有 boundary），此时整份文档本身
+      //    就是一个 MIME 部分（头部 + 空行 + 正文），直接当作单一 part 处理
+      const parts = boundary ? splitParts(text, boundary) : [text];
 
       // 3. 解析每个部分
       const resources = []; // {location, id, dataUri, contentType}
@@ -740,6 +741,10 @@
      * - 压缩多余空白
      * - 删除 HTML 注释
      */
+    // 匹配单个 mso-* 声明；值部分优先匹配引号包裹的字符串（如 mso-number-format 内含转义分号\;），
+    // 避免把值截断在字符串内部的 ; 处，导致残留的引号把后续 CSS 规则吞进字符串里
+    const MSO_PROP_RE = /\bmso-[a-z0-9-]+\s*:\s*(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^;]*)\s*;?/gi;
+
     function optimizeHtml(html) {
       // 1. 删除 IE 条件注释（含 Office XML 元数据）
       //    格式: <!--[if ...]> ... <![endif]-->
@@ -748,6 +753,11 @@
       html = html.replace(/<!\x2d\x2d\[if[\s\S]*?<!\[endif\]\x2d\x2d>/gi, '');
       // 删除残留的条件注释结束标记
       html = html.replace(/<!\[endif\]\x2d\x2d>/gi, '');
+
+      // Excel/WPS 常把 CSS 包在 HTML 注释中；只移除 style 内的包裹符，保留 CSS 规则
+      html = html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, styleBlock =>
+        styleBlock.replace(/<!\x2d\x2d|\x2d\x2d>/g, '')
+      );
 
       // 2. 删除所有 HTML 注释（同上，用 \x2d 表示 '-' 规避内联脚本解析歧义）
       html = html.replace(/<!\x2d\x2d[\s\S]*?\x2d\x2d>/g, '');
@@ -792,12 +802,12 @@
 
       // 6. 删除 style 属性中的 mso-* 属性
       html = html.replace(/\s+style\s*=\s*"([^"]*)"/gi, (match, style) => {
-        const cleaned = trimPtZeros(style.replace(/\bmso-[^;:]+:[^;]+;?/gi, '')).trim();
+        const cleaned = trimPtZeros(style.replace(MSO_PROP_RE, '')).trim();
         if (!cleaned) return ''; // 整个 style 都是 mso-* 属性
         return ` style="${cleaned}"`;
       });
       html = html.replace(/\s+style\s*=\s*'([^']*)'/gi, (match, style) => {
-        const cleaned = trimPtZeros(style.replace(/\bmso-[^;:]+:[^;]+;?/gi, '')).trim();
+        const cleaned = trimPtZeros(style.replace(MSO_PROP_RE, '')).trim();
         if (!cleaned) return '';
         return ` style="${cleaned}"`;
       });
@@ -805,7 +815,7 @@
       // 7. 删除 <style> 标签中的 mso-* 规则和 Office 特定规则
       html = html.replace(/<style[^>]*>([\s\S]*?)<\/style>/gi, (match, css) => {
         // 删除 mso-* 属性
-        let cleaned = css.replace(/\bmso-[^;:]+:[^;]+;?/gi, '');
+        let cleaned = css.replace(MSO_PROP_RE, '');
         // 删除 @page、@font-face 中的 mso 项
         cleaned = cleaned.replace(/@page[^{]*\{[^}]*\}/gi, '');
         // 删除仅含 mso-* 的规则
