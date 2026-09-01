@@ -121,6 +121,10 @@
         <input type="checkbox" id="opt-resources" checked>
         <span data-i18n="inlineResources">内联资源（图片/CSS 等以 data URI 内联）</span>
       </label>
+      <label class="option">
+        <input type="checkbox" id="opt-unicode" checked>
+        <span data-i18n="decodeUnicode">解码 CSS Unicode 转义和 HTML 数字字符引用</span>
+      </label>
     </div>
   </div>
 
@@ -146,7 +150,7 @@
         title: 'MHTML 转 HTML 工具', subtitle: '将 .mhtml / .mht 文件转换为单文件 HTML（资源以 data URI 内联）。所有转换在浏览器本地完成，文件不会上传。',
         dropFiles: '拖放 .mhtml / .mht 文件到这里', chooseFiles: '或点击选择文件（支持多选）',
         optimize: '精简输出（删除 Office 元数据、mso 样式、空标签，合并重复内联样式为 CSS 类，减小体积）',
-        inlineResources: '内联资源（图片/CSS 等以 data URI 内联）', results: '转换结果', clear: '清空',
+        inlineResources: '内联资源（图片/CSS 等以 data URI 内联）', decodeUnicode: '解码 CSS Unicode 转义和 HTML 数字字符引用', results: '转换结果', clear: '清空',
         processing: '转换中...', download: '下载 HTML', preview: '预览', done: '完成', error: '失败',
         invalidFile: '请选择 .mhtml 或 .mht 文件', boundaryError: '未找到 MIME boundary，可能不是有效的 MHTML 文件', mainHtmlError: '未找到主 HTML 文档'
       },
@@ -154,7 +158,7 @@
         title: 'MHTML to HTML Converter', subtitle: 'Convert .mhtml / .mht files into standalone HTML files with resources inlined as data URIs. Everything runs locally in your browser.',
         dropFiles: 'Drop .mhtml / .mht files here', chooseFiles: 'or click to choose files (multiple files supported)',
         optimize: 'Optimize output (remove Office metadata, mso styles, empty tags, and deduplicate inline styles into CSS classes)',
-        inlineResources: 'Inline resources (images, CSS, and more as data URIs)', results: 'Conversion results', clear: 'Clear',
+        inlineResources: 'Inline resources (images, CSS, and more as data URIs)', decodeUnicode: 'Decode CSS Unicode escapes and HTML numeric character references', results: 'Conversion results', clear: 'Clear',
         processing: 'Converting...', download: 'Download HTML', preview: 'Preview', done: 'Done', error: 'Failed',
         invalidFile: 'Please choose .mhtml or .mht files', boundaryError: 'MIME boundary not found; this may not be a valid MHTML file', mainHtmlError: 'Main HTML document not found'
       }
@@ -256,7 +260,8 @@
         const buffer = await file.arrayBuffer();
         const opts = {
           optimize: document.getElementById('opt-optimize').checked,
-          inlineResources: document.getElementById('opt-resources').checked
+          inlineResources: document.getElementById('opt-resources').checked,
+          decodeUnicode: document.getElementById('opt-unicode').checked
         };
         const htmlString = convertMhtml(buffer, opts);
         const blob = new Blob([htmlString], { type: 'text/html;charset=utf-8' });
@@ -354,6 +359,10 @@
       }
 
       // 6. 精简输出
+      if (opts.decodeUnicode) {
+        html = decodeUnicodeEscapes(html);
+      }
+
       if (opts.optimize) {
         html = optimizeHtml(html);
       }
@@ -900,6 +909,37 @@
         html = html.slice(0, pos) + '<meta charset="utf-8">' + html.slice(pos);
       }
       return html;
+    }
+
+    /**
+     * 将 CSS Unicode 转义和正文中的数字字符引用还原为实际字符。
+     * CSS 只处理 style 标签和 style 属性，正文只处理标签之间的文本，避免误改脚本和属性值。
+     */
+    function decodeUnicodeEscapes(html) {
+      const decodeCss = css => css.replace(/\\([0-9a-fA-F]{1,6})(?:[ \t\r\n\f]|(?=[^0-9a-fA-F]))?/g,
+        (match, hex) => {
+          const codePoint = parseInt(hex, 16);
+          return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+        });
+
+      const decodeHtmlNumericEntities = text => text.replace(/&#(?:x([0-9a-fA-F]+)|([0-9]+));/g,
+        (match, hex, decimal) => {
+          const codePoint = parseInt(hex || decimal, hex ? 16 : 10);
+          return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+        });
+
+      html = html.replace(/(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi,
+        (match, open, css, close) => open + decodeCss(css) + close);
+      html = html.replace(/(\bstyle\s*=\s*)("[^"]*"|'[^']*')/gi,
+        (match, prefix, value) => prefix + value.charAt(0) + decodeCss(value.slice(1, -1)) + value.charAt(value.length - 1));
+
+      const protectedBlocks = [];
+      html = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, block => {
+        protectedBlocks.push(block);
+        return `\x00UNICODE_PROTECTED${protectedBlocks.length - 1}\x00`;
+      });
+      html = html.replace(/>([^<]*)</g, (match, text) => '>' + decodeHtmlNumericEntities(text) + '<');
+      return html.replace(/\x00UNICODE_PROTECTED(\d+)\x00/g, (_, index) => protectedBlocks[+index]);
     }
 
     // ==================== 重复行内样式提取 ====================

@@ -28,6 +28,7 @@ No build step or dependency installation is required.
 3. Choose the conversion options:
    - **Optimize output**: enabled by default; useful for Word/WPS-generated HTML.
    - **Inline resources**: enabled by default; embeds referenced resources into the output.
+  - **Decode CSS Unicode escapes and HTML numeric character references**: enabled by default; converts CSS escapes such as `\\5B8B\\4F53` and body references such as `&#25968;` into actual characters.
 4. Click **Download HTML** to save the converted file, or **Preview** to open it in a new tab.
 
 You can also serve the folder with any static HTTP server if your browser or environment restricts opening local files.
@@ -56,7 +57,7 @@ The generated Blob URLs are revoked when results are cleared or replaced. The se
 - The first `text/html` MIME part is treated as the main document.
 - Resource matching is based on MHTML `Content-Location` / `Content-ID` values and filename fallbacks; ambiguous duplicate filenames may resolve to the first match.
 - Very large files may require substantial browser memory because the file is read and converted in memory.
-- The output is always saved as UTF-8. Resource inlining can increase file size when the original resource was not already Base64 encoded.
+- The output is always saved as UTF-8. You can optionally decode CSS Unicode escapes and HTML numeric character references into actual characters. Resource inlining can increase file size when the original resource was not already Base64 encoded.
 - Browser support is required for `File.arrayBuffer()`, `TextDecoder`, `Blob`, `URL.createObjectURL()`, and Data URI handling.
 
 ## License
