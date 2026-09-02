@@ -338,6 +338,7 @@
       // 3. 解析每个部分
       const resources = []; // {location, id, dataUri, contentType}
       let mainHtml = null;
+      const htmlParts = [];
 
       for (const part of parts) {
         const parsed = parsePart(part, bytes);
@@ -351,15 +352,20 @@
         if (contentTypeMain === 'text/html' && !mainHtml) {
           // 第一个 text/html 部分作为主 HTML 文档
           mainHtml = { html: parsed.bodyText, charset: parsed.charset };
+          htmlParts.push({ location: contentLocation, html: parsed.bodyText });
           continue;
+        }
+
+        if (contentTypeMain === 'text/html') {
+          htmlParts.push({ location: contentLocation, html: parsed.bodyText });
         }
 
         // 其余部分作为资源（带 content-id/location 的 text/html 子帧会以 data URI 内联）
         if (contentLocation || contentId) {
           resources.push({
             location: contentLocation, id: contentId,
-            dataUri: buildDataUri(parsed.bodyBytes, contentType, parsed.encoding),
-            contentType
+            dataUri: buildDataUri(parsed.bodyBytes, contentType, parsed.encoding, contentLocation),
+            contentType, bodyText: parsed.bodyText
           });
         }
       }
@@ -368,6 +374,18 @@
 
       // 4. 解码主 HTML（按 charset）
       let html = mainHtml.html;
+
+      // Excel/WPS 的多 sheet 导出是一个 frameset，浏览器直接打开时不会可靠地
+      // 执行其中的旧式 frame 脚本。合并 sheet 成单页标签后，内容和原始 CSS 都能保留。
+      if (isWorkbookFrameset(html)) {
+        const sheets = htmlParts.filter(part => /(?:^|[\\/])sheet\d+\.htm[l]?$/i.test(part.location));
+        if (sheets.length > 0) {
+          const stylesheet = resources.find(resource =>
+            /(?:^|[\\/])stylesheet\.css$/i.test(resource.location)
+          );
+          html = buildWorkbookHtml(sheets, stylesheet && stylesheet.bodyText, extractSheetNames(resources));
+        }
+      }
 
       // 5. 将资源引用替换为 data URI
       if (opts.inlineResources) {
@@ -605,12 +623,51 @@
       }
     }
 
-    function buildDataUri(bytes, contentType, encoding) {
+    function buildDataUri(bytes, contentType, encoding, location) {
       // 如果原始是 base64 编码，直接用 base64；否则转换
       const base64 = bytesToBase64(bytes);
-      // 确保 contentType 包含 mime type
-      const mime = contentType.split(';')[0].trim() || 'application/octet-stream';
+      const declaredMime = contentType.split(';')[0].trim().toLowerCase();
+      const extension = (location || '').split(/[?#]/)[0].split('.').pop().toLowerCase();
+      const extensionMime = {
+        css: 'text/css', htm: 'text/html', html: 'text/html',
+        xml: 'application/xml', js: 'text/javascript', svg: 'image/svg+xml',
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+        webp: 'image/webp', ico: 'image/x-icon'
+      }[extension];
+      // 部分 WPS 导出会把所有 MIME 部分都标为 text/html；扩展名更可信。
+      const mime = extensionMime || declaredMime || 'application/octet-stream';
       return `data:${mime};base64,${base64}`;
+    }
+
+    function isWorkbookFrameset(html) {
+      return /<frameset\b/i.test(html) && /(?:sheet\d+\.htm[l]?)/i.test(html);
+    }
+
+    function extractSheetNames(resources) {
+      const script = resources.find(resource => /(?:^|[\\/])js\.js$/i.test(resource.location));
+      if (!script || !script.bodyText) return [];
+      const names = [];
+      const re = /c_rgszSh\s*\[\s*\d+\s*\]\s*=\s*["']([^"']*)["']/gi;
+      let match;
+      while ((match = re.exec(script.bodyText))) names.push(match[1]);
+      return names;
+    }
+
+    function buildWorkbookHtml(sheets, stylesheet, names) {
+      const sheetMarkup = sheets.map((sheet, index) => {
+        const doc = new DOMParser().parseFromString(sheet.html, 'text/html');
+        doc.querySelectorAll('script, link[rel="File-List"], link[rel="Main-File"], link[rel="Stylesheet"]').forEach(el => el.remove());
+        const label = (names && names[index]) || `Sheet ${index + 1}`;
+        return `<section class="mhtml-sheet" data-sheet="${index}"><h2 class="mhtml-sheet-title">${escapeHtml(label)}</h2>${doc.body ? doc.body.innerHTML : sheet.html}</section>`;
+      }).join('');
+      const tabs = sheets.map((sheet, index) => {
+        const label = (names && names[index]) || `Sheet ${index + 1}`;
+        return `<button type="button" class="mhtml-tab" data-sheet="${index}">${escapeHtml(label)}</button>`;
+      }).join('');
+      const safeStylesheet = (stylesheet || '').replace(/<\/style/gi, '<\\/style');
+      return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><title>Workbook</title><style>${safeStylesheet}</style><style>
+        html,body{margin:0;padding:0;background:#fff}.mhtml-tabs{position:sticky;top:0;z-index:2;display:flex;gap:2px;padding:4px 8px;background:#eef1f4;border-bottom:1px solid #b7c0c8}.mhtml-tab{border:1px solid #b7c0c8;border-radius:3px 3px 0 0;padding:5px 14px;background:#dfe4e8;color:#26323a;cursor:pointer}.mhtml-tab.active{background:#fff;border-bottom-color:#fff;font-weight:700}.mhtml-sheet{display:none;overflow:auto;padding:8px}.mhtml-sheet.active{display:block}.mhtml-sheet-title{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+      </style></head><body><nav class="mhtml-tabs" aria-label="Sheets">${tabs}</nav>${sheetMarkup}<script>(function(){const tabs=[...document.querySelectorAll('.mhtml-tab')];const sheets=[...document.querySelectorAll('.mhtml-sheet')];function show(index){tabs.forEach((tab,i)=>tab.classList.toggle('active',i===index));sheets.forEach((sheet,i)=>sheet.classList.toggle('active',i===index));}tabs.forEach((tab,i)=>tab.addEventListener('click',()=>show(i)));show(0);})()<${'/'}script></body></html>`;
     }
 
     function bytesToBase64(bytes) {

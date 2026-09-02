@@ -9,6 +9,7 @@ A zero-dependency, client-side tool for converting `.mhtml` and `.mht` files int
 - Convert one or multiple `.mhtml` / `.mht` files at once.
 - Select files by clicking the drop zone or drag and drop them into the page.
 - Inline referenced images, stylesheets, frames, and other resources as Base64 Data URIs.
+- Convert Excel/WPS frameset workbooks into one HTML page with clickable sheet tabs.
 - Resolve resources referenced by `cid:`, absolute URLs, relative paths, filenames, `src`, `href`, `srcset`, and CSS `url(...)` values.
 - Optimize HTML exported by Microsoft Word, WPS, and similar office software:
   - Remove Office conditional comments and metadata.
@@ -42,8 +43,10 @@ The converter is implemented entirely in [`index.html`](index.html):
 3. Parses each MIME part and decodes Base64, quoted-printable, or raw binary content.
 4. Uses the first `text/html` part as the main document.
 5. Replaces matching resource references with generated Data URIs.
-6. Optionally applies HTML cleanup and style deduplication.
-7. Normalizes the output charset to UTF-8 and adds a doctype when needed.
+6. Detects Excel/WPS multi-sheet framesets, embeds each sheet body, and adds a sheet-tab switcher.
+7. Embeds the workbook stylesheet directly and corrects common WPS MIME labels by file extension.
+8. Optionally applies HTML cleanup and style deduplication.
+9. Normalizes the output charset to UTF-8 and adds a doctype when needed.
 
 ## Privacy
 
@@ -55,6 +58,7 @@ The generated Blob URLs are revoked when results are cleared or replaced. The se
 
 - The input must contain a valid MIME boundary and at least one `text/html` part.
 - The first `text/html` MIME part is treated as the main document.
+- Excel/WPS framesets are flattened into a tabbed single-page viewer; legacy frame navigation is not retained.
 - Resource matching is based on MHTML `Content-Location` / `Content-ID` values and filename fallbacks; ambiguous duplicate filenames may resolve to the first match.
 - Very large files may require substantial browser memory because the file is read and converted in memory.
 - The output is always saved as UTF-8. You can optionally decode CSS Unicode escapes and HTML numeric character references into actual characters. Resource inlining can increase file size when the original resource was not already Base64 encoded.

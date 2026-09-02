@@ -9,6 +9,7 @@
 - 支持一次转换一个或多个 `.mhtml` / `.mht` 文件。
 - 支持点击选择文件，也支持将文件拖放到上传区域。
 - 将图片、样式表、框架及其他引用资源以内嵌 Base64 Data URI 的方式写入 HTML。
+- 支持将 Excel/WPS 多 sheet frameset 转换为带 sheet 标签切换的单页 HTML。
 - 支持解析 `cid:`、绝对 URL、相对路径和文件名引用，并处理 `src`、`href`、`srcset` 及 CSS `url(...)`。
 - 针对 Microsoft Word、WPS 等办公软件导出的 HTML 提供精简选项：
   - 删除 Office 条件注释和元数据。
@@ -55,6 +56,7 @@
 
 - 输入文件必须包含有效的 MIME boundary，并至少包含一个 `text/html` 部分。
 - 第一个 `text/html` MIME 部分会被作为主文档。
+- 如果 Excel/WPS 导出的主文档是 frameset，工具会将其扁平化为带标签的单页查看器，不再依赖旧式 frame 导航脚本。
 - 资源匹配依赖 MHTML 的 `Content-Location` / `Content-ID` 和文件名兜底匹配；同名资源存在歧义时，可能使用第一个匹配项。
 - 大文件会在浏览器内存中读取和转换，可能需要较多内存。
 - 输出始终以 UTF-8 保存。可选解码 CSS Unicode 转义和 HTML 数字字符引用。对于原本不是 Base64 编码的资源，内联后文件体积可能增大。
