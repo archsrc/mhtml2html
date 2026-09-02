@@ -118,6 +118,10 @@
         <span data-i18n="optimize">精简输出（删除 Office 元数据、mso 样式、空标签，合并重复内联样式为 CSS 类，减小体积）</span>
       </label>
       <label class="option">
+        <input type="checkbox" id="opt-format">
+        <span data-i18n="format">格式化输出（添加缩进和换行，便于阅读）</span>
+      </label>
+      <label class="option">
         <input type="checkbox" id="opt-resources" checked>
         <span data-i18n="inlineResources">内联资源（图片/CSS 等以 data URI 内联）</span>
       </label>
@@ -144,12 +148,15 @@
     const clearBtn = document.getElementById('clear-btn');
     const languageSelect = document.getElementById('language-select');
     const languageLabel = document.getElementById('language-label');
+    const optimizeOption = document.getElementById('opt-optimize');
+    const formatOption = document.getElementById('opt-format');
 
     const messages = {
       'zh-CN': {
         title: 'MHTML 转 HTML 工具', subtitle: '将 .mhtml / .mht 文件转换为单文件 HTML（资源以 data URI 内联）。所有转换在浏览器本地完成，文件不会上传。',
         dropFiles: '拖放 .mhtml / .mht 文件到这里', chooseFiles: '或点击选择文件（支持多选）',
         optimize: '精简输出（删除 Office 元数据、mso 样式、空标签，合并重复内联样式为 CSS 类，减小体积）',
+        format: '格式化输出（添加缩进和换行，便于阅读）',
         inlineResources: '内联资源（图片/CSS 等以 data URI 内联）', decodeUnicode: '解码 CSS Unicode 转义和 HTML 数字字符引用', results: '转换结果', clear: '清空',
         processing: '转换中...', download: '下载 HTML', preview: '预览', done: '完成', error: '失败',
         invalidFile: '请选择 .mhtml 或 .mht 文件', boundaryError: '未找到 MIME boundary，可能不是有效的 MHTML 文件', mainHtmlError: '未找到主 HTML 文档'
@@ -158,6 +165,7 @@
         title: 'MHTML to HTML Converter', subtitle: 'Convert .mhtml / .mht files into standalone HTML files with resources inlined as data URIs. Everything runs locally in your browser.',
         dropFiles: 'Drop .mhtml / .mht files here', chooseFiles: 'or click to choose files (multiple files supported)',
         optimize: 'Optimize output (remove Office metadata, mso styles, empty tags, and deduplicate inline styles into CSS classes)',
+        format: 'Format output (add indentation and line breaks for readability)',
         inlineResources: 'Inline resources (images, CSS, and more as data URIs)', decodeUnicode: 'Decode CSS Unicode escapes and HTML numeric character references', results: 'Conversion results', clear: 'Clear',
         processing: 'Converting...', download: 'Download HTML', preview: 'Preview', done: 'Done', error: 'Failed',
         invalidFile: 'Please choose .mhtml or .mht files', boundaryError: 'MIME boundary not found; this may not be a valid MHTML file', mainHtmlError: 'Main HTML document not found'
@@ -189,6 +197,13 @@
       applyLanguage();
     });
     applyLanguage();
+
+    optimizeOption.addEventListener('change', () => {
+      if (optimizeOption.checked) formatOption.checked = false;
+    });
+    formatOption.addEventListener('change', () => {
+      if (formatOption.checked) optimizeOption.checked = false;
+    });
 
     // 已转换文件缓存（用于下载）
     const convertedFiles = new Map();
@@ -259,7 +274,8 @@
       try {
         const buffer = await file.arrayBuffer();
         const opts = {
-          optimize: document.getElementById('opt-optimize').checked,
+          optimize: optimizeOption.checked,
+          format: formatOption.checked,
           inlineResources: document.getElementById('opt-resources').checked,
           decodeUnicode: document.getElementById('opt-unicode').checked
         };
@@ -363,7 +379,11 @@
         html = decodeUnicodeEscapes(html);
       }
 
-      if (opts.optimize) {
+      if (opts.format) {
+        html = deduplicateStyles(html);
+        html = extractCommonStyleProperties(html);
+        html = formatHtml(html);
+      } else if (opts.optimize) {
         html = optimizeHtml(html);
       }
 
@@ -882,6 +902,65 @@
       html = html.replace(/\x00PROT(\d+)\x00/g, (_, i) => protectedBlocks[+i]);
 
       return html;
+    }
+
+    function formatHtml(html) {
+      const protectedBlocks = [];
+      html = html.replace(/<(script|style|pre|textarea|code)\b[^>]*>[\s\S]*?<\/\1>/gi, block => {
+        protectedBlocks.push(block);
+        return `\x00FORMAT_PROTECTED${protectedBlocks.length - 1}\x00`;
+      });
+
+      const blockTags = new Set([
+        'html', 'head', 'body', 'title', 'meta', 'link', 'base', 'main', 'section', 'article',
+        'header', 'footer', 'nav', 'aside', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p',
+        'div', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td',
+        'form', 'fieldset', 'legend', 'blockquote', 'hr', 'address', 'figure', 'figcaption'
+      ]);
+      const voidTags = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+      const tokens = html.match(/<\x21\x2d\x2d[\s\S]*?\x2d\x2d>|<\x21[^>]*>|<[^>]+>|[^<]+/g) || [];
+      const lines = [];
+      let current = '';
+      let depth = 0;
+
+      const flush = () => {
+        const line = current.trim();
+        if (line) lines.push('  '.repeat(Math.max(0, depth)) + line);
+        current = '';
+      };
+
+      for (const token of tokens) {
+        const trimmed = token.trim();
+        if (!trimmed) continue;
+
+        if (trimmed.charAt(0) !== '<') {
+          current += current ? token.replace(/\s+/g, ' ') : trimmed;
+          continue;
+        }
+
+        const closeMatch = trimmed.match(/^<\/\s*([a-z0-9:-]+)/i);
+        const openMatch = trimmed.match(/^<\s*([a-z0-9:-]+)/i);
+        const tagName = (closeMatch || openMatch) && (closeMatch || openMatch)[1].toLowerCase();
+        const isBlock = tagName && blockTags.has(tagName);
+
+        if (closeMatch && isBlock) {
+          flush();
+          depth = Math.max(0, depth - 1);
+          lines.push('  '.repeat(depth) + trimmed);
+        } else if (openMatch && isBlock && !voidTags.has(tagName) && !/\/\s*>$/.test(trimmed)) {
+          flush();
+          lines.push('  '.repeat(depth) + trimmed);
+          depth++;
+        } else if (isBlock) {
+          flush();
+          lines.push('  '.repeat(depth) + trimmed);
+        } else {
+          current += trimmed;
+        }
+      }
+      flush();
+
+      return lines.join('\n').replace(/\x00FORMAT_PROTECTED(\d+)\x00/g, (_, index) => protectedBlocks[+index]);
     }
 
     /**
